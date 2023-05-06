@@ -1,5 +1,8 @@
 import dgl
 import torch as th
+import unit_attack_types as ut
+
+from pysc2.lib import units as sc2_units
 
 def check_battle(units):
   # Find battle
@@ -42,43 +45,47 @@ def add_unit_meta_data(graph, units):
   unit_shield_upgrade = []
   
   for unit in units:
-    unit_tag.append(unit.tag)
-    unit_type.append(unit.unit_type)
-    unit_alliance.append(unit.alliance)
-    unit_facing.append(unit.facing)
-    unit_radius.append(unit.radius)
-    unit_cloaked.append(unit.cloaked)
-    unit_pos.append(th.tensor([unit.unit_type.x, unit.unit_type.y, unit.unit_type.z)])
-    unit_health.append(unit.health)
-    unit_shield.append(unit.shield)
-    unit_energy.append(unit.energy) 
-    unit_flying.append(unit.is_flying) 
-    unit_burrowed.append(unit.is_burrowed) 
-    unit_attack_upgrade.append(unit.attack_upgrade_level) 
-    unit_armor_upgrade.append(unit.armor_upgrade_level) 
-    unit_shield_upgrade.append(unit.shield_upgrade_level)
+    unit_tag.append(th.tensor(unit.tag))
+    unit_type.append(th.tensor(sc2_units.get_unit_type(unit.unit_type)))
+    unit_alliance.append(th.tensor(unit.alliance))
+    unit_facing.append(th.tensor(unit.facing))
+    unit_radius.append(th.tensor(unit.radius))
+    unit_cloaked.append(th.tensor(unit.cloak))
+    unit_pos.append(th.tensor([unit.pos.x, unit.pos.y, unit.pos.z]))
+    unit_health.append(th.tensor(unit.health))
+    unit_shield.append(th.tensor(unit.shield))
+    unit_energy.append(th.tensor(unit.energy))
+    unit_flying.append(th.tensor(unit.is_flying))
+    unit_burrowed.append(th.tensor(unit.is_burrowed))
+    unit_attack_upgrade.append(th.tensor(unit.attack_upgrade_level)) 
+    unit_armor_upgrade.append(th.tensor(unit.armor_upgrade_level)) 
+    unit_shield_upgrade.append(th.tensor(unit.shield_upgrade_level))
     
   graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
-  graph.ndata["unit_tag"] = th.stack(unit_tag) 
+  graph.ndata["unit_type"] = th.stack(unit_type) 
+  graph.ndata["unit_alliance"] = th.stack(unit_alliance) 
+  graph.ndata["unit_facing"] = th.stack(unit_facing) 
+  graph.ndata["unit_radius"] = th.stack(unit_radius) 
+  graph.ndata["unit_cloaked"] = th.stack(unit_cloaked) 
+  graph.ndata["unit_pos"] = th.stack(unit_pos) 
+  graph.ndata["unit_health"] = th.stack(unit_health) 
+  graph.ndata["unit_shield"] = th.stack(unit_shield) 
+  graph.ndata["unit_energy"] = th.stack(unit_energy) 
+  graph.ndata["unit_flying"] = th.stack(unit_flying) 
+  graph.ndata["unit_burrowed"] = th.stack(unit_burrowed) 
+  graph.ndata["unit_attack_upgrade"] = th.stack(unit_attack_upgrade) 
+  graph.ndata["unit_armor_upgrade"] = th.stack(unit_armor_upgrade) 
+  graph.ndata["unit_shield_upgrade"] = th.stack(unit_shield_upgrade) 
   
 def add_attackable_edges(graph, units, unit_map):
   for i in range(len(units)):
     for j in range(len(units)):
-      if (i != j) and (graph.ndata['unit_alliance'][units[i]] != graph.ndata['unit_alliance'][units[j]]):
+      if (i != j) and (graph.ndata['unit_alliance'][i] != graph.ndata['unit_alliance'][j]):
         # Check if i->j can attack and is in-range to attack
-        if (i != j) and attackable(graph.ndata['unit_type'][units[i]], graph.ndata['unit_type'][units[j]]) and in_range(graph.ndata['unit_pos'][units[i]], graph.ndata['unit_radius'][units[j]], graph.ndata['unit_pos'][units[i]]):
+        if (i != j) and attackable(graph.ndata['unit_type'][i], graph.ndata['unit_type'][j]) and in_range(graph.ndata['unit_pos'][i], graph.ndata['unit_radius'][j], graph.ndata['unit_pos'][i]):
           graph.add_edges([i], [j], {'e': th.tensor([1., 0., 0., 0., 0., 0.])})
         # Check if j->i can attack and is in-range to attack
-        if (i != j) and attackable(graph.ndata['unit_type'][units[j]], graph.ndata['unit_type'][units[i]]) and in_range(graph.ndata['unit_pos'][units[j]], graph.ndata['unit_radius'][units[i]], graph.ndata['unit_pos'][units[j]]):
+        if (i != j) and attackable(graph.ndata['unit_type'][j], graph.ndata['unit_type'][i]) and in_range(graph.ndata['unit_pos'][j], graph.ndata['unit_radius'][i], graph.ndata['unit_pos'][j]):
           graph.add_edges([j], [i], {'e': th.tensor([1., 0., 0., 0., 0., 0.])})
         
 def add_attacking_edges(graph, units, unit_map):
