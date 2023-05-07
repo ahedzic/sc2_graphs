@@ -42,7 +42,7 @@ from s2clientprotocol import common_pb2 as sc_common
 from s2clientprotocol import sc2api_pb2 as sc_pb
 from pysc2.run_configs import lib as run_configs_lib
 
-from sc2_graph import check_battle, create_graph
+from sc2_graph import get_deltas, check_battle, create_graph
 
 NUM_ACTION_TYPES = 539
 MAX_UNIT_COUNT = 16
@@ -325,13 +325,23 @@ class ReplayProcessor(multiprocessing.Process):
     self.stats.replay_stats.replays += 1
     self._update_stage("step")
     controller.step()
+    prev_obs = None
+    
     while True:
       self.stats.replay_stats.steps += 1
       self._update_stage("observe")
       obs = controller.observe()
+      
+      #for group in obs.observation.ui_data.groups:
+      #  if group.count > 2:
+      #	  print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ GROUPS\n", obs)
       	
-      if check_battle(obs.observation.raw_data.units):
-        graph = create_graph(obs.observation.raw_data.units)
+      if (prev_obs != None):
+        deltas = get_deltas(obs.observation.raw_data.units, prev_obs.observation.raw_data.units)
+        
+       	if check_battle(obs.observation.raw_data.units, deltas):
+       	  graph = create_graph(obs.observation.raw_data.units, deltas)
+      prev_obs = obs
 
       '''for action in obs.actions:
         act_fl = action.action_feature_layer
