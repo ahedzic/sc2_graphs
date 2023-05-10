@@ -147,13 +147,13 @@ def add_edges(graph, units, unit_map):
               targeteable = True
           
           if targeteable:
-            graph.add_edges([i], [j], {"e": th.tensor([1., 0., 0., 0., 0.])})
+            graph.add_edges([i], [j], {"e": th.tensor([[1., 0., 0., 0., 0.]])})
           
           # Add "Attacking" edges
           for order in units[i].orders:
             if order.ability_id in ut.attack_abilities:
               if hasattr(order, 'target_unit_tag') and (order.target_unit_tag in unit_map.keys()):
-                graph.add_edges([i], [unit_map[order.target_unit_tag]], {"e": th.tensor([0., 1., 0., 0., 0.])})
+                graph.add_edges([i], [unit_map[order.target_unit_tag]], {"e": th.tensor([[0., 1., 0., 0., 0.]])})
               else:
                 # TODO calculate AoE ability targets
                 pass
@@ -161,21 +161,21 @@ def add_edges(graph, units, unit_map):
           # Add "Visible" edges
           # Visible = 1, Snapshot = 2, Hidden = 3
           # Cloaked = 1, CloakedDetected = 2, NotCloaked = 3
-          if (target_range <= ut.unit_data[graph.ndata["unit_type"][i].item()]["sight"]) and (graph.ndata["unit_display"][j] == 1) and (graph.ndata["unit_display"][j] != 1):
-            graph.add_edges([i], [j], {"e": th.tensor([0., 0., 0., 1., 0.])})
+          if (target_range <= ut.unit_data[graph.ndata["unit_type"][i].item()]["sight"]) and (graph.ndata["unit_display"][j] == 1) and (graph.ndata["unit_cloaked"][j] != 1):
+            graph.add_edges([i], [j], {"e": th.tensor([[0., 0., 0., 1., 0.]])})
         else:
           # Add friendly "Targetable" edges
           if 1 in ut.unit_data[graph.ndata["unit_type"][i].item()]["support_type"]:
             support_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["support_range"][1]
             
             if (target_range <= support_range):
-              graph.add_edges([i], [j], {"e": th.tensor([1., 0., 0., 0., 0.])})
+              graph.add_edges([i], [j], {"e": th.tensor([[1., 0., 0., 0., 0.]])})
           
           # Add "Supporting" edges
           for order in units[i].orders:
             if order.ability_id in ut.support_abilities:
               if hasattr(order, 'target_unit_tag') and (order.target_unit_tag in unit_map.keys()):
-                graph.add_edges([i], [unit_map[order.target_unit_tag]], {"e": th.tensor([0., 0., 1., 0., 0.])})
+                graph.add_edges([i], [unit_map[order.target_unit_tag]], {"e": th.tensor([[0., 0., 1., 0., 0.]])})
               else:
                 # TODO calculate AoE support targets
                 pass
@@ -183,7 +183,7 @@ def add_edges(graph, units, unit_map):
     # Add "Transporting" edges  
     if hasattr(units[i], "passengers"):
       for passenger in units[i].passengers:
-        graph.add_edges([i], [unit_map[passenger.tag]], {"e": th.tensor([0., 0., 0., 0., 1.])}) 
+        graph.add_edges([i], [unit_map[passenger.tag]], {"e": th.tensor([[0., 0., 0., 0., 1.]])}) 
              
 
 def create_graph(units, deltas):
