@@ -25,6 +25,8 @@ import time
 import io
 import json
 import mpyq
+import numpy as np
+import pickle
 
 from absl import app
 from absl import flags
@@ -43,6 +45,7 @@ from s2clientprotocol import sc2api_pb2 as sc_pb
 from pysc2.run_configs import lib as run_configs_lib
 
 from sc2_graph import get_deltas, check_battle, create_graph
+from graph_image import create_graph_image
 
 NUM_ACTION_TYPES = 539
 MAX_UNIT_COUNT = 16
@@ -61,6 +64,8 @@ flags.DEFINE_integer("parallel", 1, "How many instances to run in parallel.")
 flags.DEFINE_integer("step_mul", 8, "How many game steps per observation.")
 flags.DEFINE_string("replays", "/home/ahedzic/StarCraftII/Replays", "Path to a directory of replays.")
 flags.mark_flag_as_required("replays")
+graph_dir ='/home/ahedzic/Downloads/graphs'
+graph_images_dir ='/home/ahedzic/Downloads/graph_images'
 
 
 size = point.Point(16, 16)
@@ -290,7 +295,7 @@ class ReplayProcessor(multiprocessing.Process):
                   self._print("Starting %s from player %s's perspective" % (
                       replay_name, player_id))
                   self.process_replay(controller, replay_data, map_data,
-                                      player_id)
+                                      player_id, replay_name)
               else:
                 self._print("Replay is invalid.")
                 self.stats.replay_stats.invalid_replays.add(replay_name)
@@ -311,7 +316,7 @@ class ReplayProcessor(multiprocessing.Process):
     self.stats.update(stage)
     self.stats_queue.put(self.stats)
     
-  def process_replay(self, controller, replay_data, map_data, player_id):
+  def process_replay(self, controller, replay_data, map_data, player_id, replay_name):
     """Process a single replay, updating the stats."""
     self._update_stage("start_replay")
     controller.start_replay(sc_pb.RequestStartReplay(
@@ -326,61 +331,35 @@ class ReplayProcessor(multiprocessing.Process):
     self._update_stage("step")
     controller.step()
     prev_obs = None
+    battle = 1
+    battle_step = 1
+    current_battle = False
     
     while True:
       self.stats.replay_stats.steps += 1
       self._update_stage("observe")
       obs = controller.observe()
-      
-      #for group in obs.observation.ui_data.groups:
-      #  if group.count > 2:
-      #	  print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ GROUPS\n", obs)
       	
       if (prev_obs != None):
         deltas = get_deltas(obs.observation.raw_data.units, prev_obs.observation.raw_data.units)
         
        	if check_battle(obs.observation.raw_data.units, deltas):
+       	  current_battle = True
        	  graph = create_graph(obs.observation.raw_data.units, deltas)
+       	  graph_name = replay_name + "_battle_" + str(battle) + "_step_" + str(battle_step)
+       	  create_graph_image(graph_images_dir, graph, graph_name)
+       	  graph_path = os.path.join(graph_dir, graph_name+".pkl")
+          output = open(graph_path, 'wb')
+          pickle.dump(graph, output)
+          output.close()
+          battle_step += 1
+        else:
+          if current_battle:
+            battle += 1
+            current_battle = False
+            battle_step = 1
+       	  
       prev_obs = obs
-
-      '''for action in obs.actions:
-        act_fl = action.action_feature_layer
-        if act_fl.HasField("unit_command"):
-          self.stats.replay_stats.made_abilities[
-              act_fl.unit_command.ability_id] += 1
-        if act_fl.HasField("camera_move"):
-          self.stats.replay_stats.camera_move += 1
-        if act_fl.HasField("unit_selection_point"):
-          self.stats.replay_stats.select_pt += 1
-        if act_fl.HasField("unit_selection_rect"):
-          self.stats.replay_stats.select_rect += 1
-        if action.action_ui.HasField("control_group"):
-          self.stats.replay_stats.control_group += 1
-
-        try:
-          func = feat.reverse_action(action).function
-        except ValueError:
-          func = -1
-        self.stats.replay_stats.made_actions[func] += 1
-
-      for valid in obs.observation.abilities:
-        self.stats.replay_stats.valid_abilities[valid.ability_id] += 1
-
-      for u in obs.observation.raw_data.units:
-        self.stats.replay_stats.unit_ids[u.unit_type] += 1
-        for b in u.buff_ids:
-          self.stats.replay_stats.buffs[b] += 1
-
-      for u in obs.observation.raw_data.player.upgrade_ids:
-        self.stats.replay_stats.upgrades[u] += 1
-
-      for e in obs.observation.raw_data.effects:
-        self.stats.replay_stats.effects[e.effect_id] += 1
-
-      for ability_id in feat.available_actions(obs.observation):
-        self.stats.replay_stats.valid_actions[ability_id] += 1'''
-        
-      
 
       if obs.player_result:
         break
