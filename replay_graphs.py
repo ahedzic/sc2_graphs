@@ -345,12 +345,13 @@ class ReplayProcessor(multiprocessing.Process):
         
        	if check_battle(obs.observation.raw_data.units, deltas):
        	  current_battle = True
+       	  graph_dict = {}
        	  graph = create_graph(obs.observation.raw_data.units, deltas)
        	  graph_name = replay_name + "_battle_" + str(battle) + "_step_" + str(battle_step)
-       	  create_graph_image(graph_images_dir, graph, graph_name)
+       	  #create_graph_image(graph_images_dir, graph, graph_name)
        	  graph_path = os.path.join(graph_dir, graph_name+".pkl")
           output = open(graph_path, 'wb')
-          pickle.dump(graph, output)
+          pickle.dump(graph_dict, output)
           output.close()
           battle_step += 1
         else:
