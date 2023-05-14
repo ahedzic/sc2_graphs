@@ -60,8 +60,8 @@ MINIMAP_SIZE = 64
 SCREEN_SIZE = 96
 
 FLAGS = flags.FLAGS
-flags.DEFINE_integer("parallel", 1, "How many instances to run in parallel.")
-flags.DEFINE_integer("step_mul", 8, "How many game steps per observation.")
+flags.DEFINE_integer("parallel", 20, "How many instances to run in parallel.")
+flags.DEFINE_integer("step_mul", 32, "How many game steps per observation.")
 flags.DEFINE_string("replays", "/home/ahedzic/StarCraftII/Replays", "Path to a directory of replays.")
 flags.mark_flag_as_required("replays")
 graph_dir ='/home/ahedzic/Downloads/graphs'
@@ -345,8 +345,7 @@ class ReplayProcessor(multiprocessing.Process):
         
        	if check_battle(obs.observation.raw_data.units, deltas):
        	  current_battle = True
-       	  graph_dict = {}
-       	  graph = create_graph(obs.observation.raw_data.units, deltas)
+       	  graph_dict = create_graph(obs.observation.raw_data.units, deltas)
        	  graph_name = replay_name + "_battle_" + str(battle) + "_step_" + str(battle_step)
        	  #create_graph_image(graph_images_dir, graph, graph_name)
        	  graph_path = os.path.join(graph_dir, graph_name+".pkl")
