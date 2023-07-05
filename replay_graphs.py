@@ -46,6 +46,7 @@ from pysc2.run_configs import lib as run_configs_lib
 
 from sc2_graph import get_deltas, check_battle, create_graph
 from graph_image import create_graph_image
+import unit_data as ut
 
 NUM_ACTION_TYPES = 539
 MAX_UNIT_COUNT = 16
@@ -59,10 +60,26 @@ RAW_RESOLUTION = 128
 MINIMAP_SIZE = 64
 SCREEN_SIZE = 96
 
+total_edge_count = {}
+total_edge_count[0] = 0
+total_edge_count[1] = 0
+total_edge_count[2] = 0
+total_edge_count[3] = 0
+total_edge_count[4] = 0
+total_edge_count[5] = 0
+total_edge_count[6] = 0
+total_edge_count[7] = 0
+
+edge_balance_map = {}
+edge_balance_map['attack'] = 0
+edge_balance_map['support'] = 0
+edge_balance_map['ability'] = 0
+
 FLAGS = flags.FLAGS
-flags.DEFINE_integer("parallel", 20, "How many instances to run in parallel.")
+flags.DEFINE_integer("parallel", 8, "How many instances to run in parallel.")
 flags.DEFINE_integer("step_mul", 32, "How many game steps per observation.")
-flags.DEFINE_string("replays", "/home/ahedzic/StarCraftII/Replays", "Path to a directory of replays.")
+flags.DEFINE_string("replays", "/home/ahedzic/Downloads/attack_graphs/", "Path to a directory of replays.")
+#flags.DEFINE_string("replays", "/home/ahedzic/StarCraftII/Replays", "Path to a directory of replays.")
 flags.mark_flag_as_required("replays")
 graph_dir ='/home/ahedzic/Downloads/graphs'
 graph_images_dir ='/home/ahedzic/Downloads/graph_images'
@@ -255,7 +272,7 @@ class ReplayProcessor(multiprocessing.Process):
     signal.signal(signal.SIGTERM, lambda a, b: sys.exit())  # Exit quietly.
     self._update_stage("spawn")
     replay_name = "none"
-    while True:
+    while ((time.time() - self.stats.time) < 300):
       self._print("Starting up a new SC2 instance.")
       self._update_stage("launch")
       try:
@@ -282,19 +299,25 @@ class ReplayProcessor(multiprocessing.Process):
               self._print(info)
               self._print("-" * 60)
               if valid_replay(info, ping):
+                mmr_pass = False
                 self.stats.replay_stats.maps[info.map_name] += 1
                 for player_info in info.player_info:
                   race_name = sc_common.Race.Name(
                       player_info.player_info.race_actual)
                   self.stats.replay_stats.races[race_name] += 1
+                  
+                  if hasattr(player_info, 'player_mmr'):
+                    if player_info.player_mmr > 1000:
+                      mmr_pass = True
                 map_data = None
                 if info.local_map_path:
                   self._update_stage("open map file")
                   map_data = self.run_config.map_data(info.local_map_path)
                 for player_id in [1, 2]:
-                  self._print("Starting %s from player %s's perspective" % (
+                  if mmr_pass:
+                    self._print("Starting %s from player %s's perspective" % (
                       replay_name, player_id))
-                  self.process_replay(controller, replay_data, map_data,
+                    self.process_replay(controller, replay_data, map_data,
                                       player_id, replay_name)
               else:
                 self._print("Replay is invalid.")
@@ -334,25 +357,51 @@ class ReplayProcessor(multiprocessing.Process):
     battle = 1
     battle_step = 1
     current_battle = False
+    steps = 0
+    wait_count = 20
+    global edge_balance_map
     
-    while True:
+    while (steps <= 100000):
       self.stats.replay_stats.steps += 1
       self._update_stage("observe")
       obs = controller.observe()
+      
+      '''for unit in obs.observation.raw_data.units:
+        for order in unit.orders:
+          if order.ability_id in ut.attack_abilities:
+            ability_path = os.path.join(graph_dir, (replay_name+".txt"))
+            f = open(ability_path, "a")
+            f.write(str(order.ability_id)+'\n')
+            f.close()'''
       	
       if (prev_obs != None):
         deltas = get_deltas(obs.observation.raw_data.units, prev_obs.observation.raw_data.units)
         
-       	if check_battle(obs.observation.raw_data.units, deltas):
+       	if (wait_count >= 20) and check_battle(obs.observation.raw_data.units, deltas):
        	  current_battle = True
-       	  graph_dict = create_graph(obs.observation.raw_data.units, deltas)
-       	  graph_name = replay_name + "_battle_" + str(battle) + "_step_" + str(battle_step)
-       	  #create_graph_image(graph_images_dir, graph, graph_name)
-       	  graph_path = os.path.join(graph_dir, graph_name+".pkl")
-          output = open(graph_path, 'wb')
-          pickle.dump(graph_dict, output)
-          output.close()
-          battle_step += 1
+       	  
+       	  try:
+       	    graph_dict, edge_counts, added = create_graph(obs.observation.raw_data.units, deltas, edge_balance_map)
+       	  
+       	    if added:#edge_counts[2] or edge_counts[3]:# or edge_counts[4] or edge_counts[5]:
+       	      graph_name = replay_name + "_battle_" + str(battle) + "_step_" + str(battle_step)
+       	      #create_graph_image(graph_images_dir, graph, graph_name)
+       	      graph_path = os.path.join(graph_dir, graph_name+".pkl")
+              output = open(graph_path, 'wb')
+              pickle.dump(graph_dict, output)
+              output.close()
+              battle_step += 1
+              wait_count = 0
+          
+              for key in edge_counts.keys():
+                total_edge_count[key] += edge_counts[key]
+            
+              print(edge_balance_map)
+          except BaseException as e:
+            f = open("errors.txt", "a")
+            f.write(replay_name+'\n')
+            f.write(str(e)+'\n')
+            f.close()
         else:
           if current_battle:
             battle += 1
@@ -360,12 +409,14 @@ class ReplayProcessor(multiprocessing.Process):
             battle_step = 1
        	  
       prev_obs = obs
+      wait_count += 1
 
       if obs.player_result:
         break
 
       self._update_stage("step")
       controller.step(FLAGS.step_mul)
+      steps += FLAGS.step_mul
 
 
 def stats_printer(stats_queue):
@@ -445,7 +496,7 @@ def main(unused_argv):
       p = ReplayProcessor(i, run_config, replay_queue, stats_queue)
       p.daemon = True
       p.start()
-      time.sleep(1)  # Stagger startups, otherwise they seem to conflict somehow
+      time.sleep(2)  # Stagger startups, otherwise they seem to conflict somehow
 
     replay_queue.join()  # Wait for the queue to empty.
   except KeyboardInterrupt:

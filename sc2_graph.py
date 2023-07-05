@@ -1,14 +1,16 @@
 import dgl
 import torch as th
 import unit_data as ut
+import os
 
 from pysc2.lib import units as sc2_units
 
 MAX_RADIUS = 13
 MAX_X = 256
 MAX_Y = 256
-MAX_Z = 4
+MAX_Z = 20
 FEAT_SPACE_SIZE = 203
+ability_dir ='/home/ahedzic/Downloads/abilities'
 
 def get_deltas(units, prev_units):
   deltas = {"total_health": 0, "total_shield": 0, "total_energy": 0}
@@ -37,7 +39,7 @@ def check_battle(units, deltas):
       unit_count += 1
       sides.add(unit.alliance)
       		
-  if (len(sides) >= 2) and (unit_count >= 80) and ((deltas["total_health"] + deltas["total_shield"]) < 0):
+  if (len(sides) >= 2) and (unit_count >= 20) and (unit_count <= 10000) and ((deltas["total_health"] + deltas["total_shield"]) < 0):
     battle_found = True
     print("FOUND BATTLE BETWEEN", sides, "WITH UNIT COUNT", unit_count)
     
@@ -112,7 +114,8 @@ def add_unit_meta_data(graph, units, deltas):
     
     # Feat space size = 203
     # Index 0-180 one-hot unit type (Size 181)
-    feat[ut.unit_data[sc2_units.get_unit_type(unit.unit_type)]["index"]] = 1.0
+    if sc2_units.get_unit_type(unit.unit_type) in ut.unit_data.keys():
+      feat[ut.unit_data[sc2_units.get_unit_type(unit.unit_type)]["index"]] = 1.0
     # Index 181-182 one-hot team (Size 2)
     if unit.alliance == 4:
       feat[181] = 1.0
@@ -175,7 +178,7 @@ def add_unit_meta_data(graph, units, deltas):
   graph.ndata["unit_burrowed"] = th.stack(unit_burrowed)
   graph.ndata["feat"] = th.stack(unit_feat)
   
-def add_edges(graph, units, unit_map, edge_type_map):
+def add_edges(graph, empty_graph, units, unit_map, edge_type_map, edge_counts, keep_map, edge_balance_map):
   # Index 0 Targeteable
   # Index 1 Normal Attacking
   # Index 2 Single Target Ability Attacking
@@ -183,104 +186,187 @@ def add_edges(graph, units, unit_map, edge_type_map):
   # Index 4 Single Target Supporting
   # Index 5 AoE Supporting
   # Index 6 Visible
-  # Index 7 Transporting
-  for i in range(len(units)):     
-    for j in range(len(units)):
-      if i != j:
-        # Get range for edge determinations
-        target_range = get_range(graph.ndata["unit_pos"][i], graph.ndata["unit_pos"][j])
+  # Index 7 Communication
+  added = False
+  create = False
+  
+  for unit in units:
+    for order in unit.orders:
+      if (order.ability_id in ut.attack_abilities) or (order.ability_id in ut.support_abilities):
+        create = True
+        break;
         
-        # Opponent edges first
-        if graph.ndata["unit_alliance"][i] != graph.ndata["unit_alliance"][j]:
-          # Add enemy "Targetable" edges
-          attacker_types = ut.unit_data[graph.ndata["unit_type"][i].item()]["attack_type"]
-          targeteable = False
-          
-          if 1 in attacker_types:
-            ground_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["attack_range"][1]
-            is_ground = len(ut.unit_data[graph.ndata["unit_type"][j].item()]["unit_type"].intersection(set([1, 3, 8]))) > 0
-            
-            if (target_range <= ground_range) and is_ground:
-              targeteable = True
-              
-          if 2 in attacker_types: 
-            air_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["attack_range"][2]
-            is_air = len(ut.unit_data[graph.ndata["unit_type"][j].item()]["unit_type"].intersection(set([2, 4, 9]))) > 0
-            
-            if (target_range <= air_range) and is_air:
-              targeteable = True
-          
-          if targeteable:
-            graph.add_edges([i], [j], {"z": th.tensor([[1., 0., 0., 0., 0., 0., 0., 0.]])})
-            edge_type_map[(i, j)] = th.tensor([1., 0., 0., 0., 0., 0., 0., 0.])
-          
-          # Add "Attacking" edges
-          for order in units[i].orders:
-            if order.ability_id in ut.attack_commands:
-              if hasattr(order, 'target_unit_tag') and (order.target_unit_tag in unit_map.keys()):
-                # Normal attacking
-                graph.add_edges([i], [unit_map[order.target_unit_tag]], {"z": th.tensor([[0., 1., 0., 0., 0., 0., 0., 0.]])})
-                edge_type_map[(i, unit_map[order.target_unit_tag])] = th.tensor([0., 1., 0., 0., 0., 0., 0., 0.])
-            if order.ability_id in ut.attack_abilities:
-              if hasattr(order, 'target_unit_tag') and (order.target_unit_tag in unit_map.keys()):
-                # Single target ability attacking
-                graph.add_edges([i], [unit_map[order.target_unit_tag]], {"z": th.tensor([[0., 0., 1., 0., 0., 0., 0., 0.]])})
-                edge_type_map[(i, unit_map[order.target_unit_tag])] = th.tensor([0., 0., 1., 0., 0., 0., 0., 0.])
-              if hasattr(order, 'target_pos') and (order.target_unit_tag in unit_map.keys()):
-                # AoE ability attacking
-                target_pos = th.tensor([order.target_pos.x, order.target_pos.y, 0.0])
-                target_range = get_range(target_pos, graph.ndata["unit_pos"][j])
+    if create:
+      break;
+      
+  attack_count = 0
+      
+  
+  if create:
+    for i in range(len(units)):     
+      for j in range(len(units)):
+        if i != j:
+          # Get range for edge determinations
+          target_range = get_range(graph.ndata["unit_pos"][i], graph.ndata["unit_pos"][j])
+        
+          # Opponent edges first
+          if graph.ndata["unit_alliance"][i] != graph.ndata["unit_alliance"][j]:
+            # Add "Attacking" edges
+            for order in units[i].orders:
+              if order.ability_id in ut.attack_abilities:
+                if hasattr(order, 'target_pos'):
+                  # AoE ability attacking
+                  target_pos = th.tensor([order.target_pos.x, order.target_pos.y])
+                  aoe_range = get_range(target_pos, th.tensor([graph.ndata["unit_pos"][j][0], graph.ndata["unit_pos"][j][1]]))
                 
-                if target_range <= ut.attack_ability_aoe_radius[order.ability_id]:
-                  graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 1., 0., 0., 0., 0.]])})
-                  edge_type_map[(i, j)] = th.tensor([0., 0., 0., 1., 0., 0., 0., 0.])
+                  if aoe_range <= ut.attack_ability_aoe_radius[order.ability_id] and ((i, j) not in edge_type_map.keys()):
+                    graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 1., 0., 0., 0., 0.]])})
+                    edge_type_map[(i, j)] = th.tensor([0., 0., 0., 1., 0., 0., 0., 0.])
+                    edge_counts[3] += 1
+                  
+                    edge_balance_map['ability'] += 1
+                    added = True
+                    attack_count += 1
+                elif hasattr(order, 'target_world_space_pos'):
+                  # AoE ability attacking
+                  target_pos = th.tensor([order.target_world_space_pos.x, order.target_world_space_pos.y])
+                  aoe_range = get_range(target_pos, th.tensor([graph.ndata["unit_pos"][j][0], graph.ndata["unit_pos"][j][1]]))
+                
+                  if aoe_range <= ut.attack_ability_aoe_radius[order.ability_id] and ((i, j) not in edge_type_map.keys()):
+                    graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 1., 0., 0., 0., 0.]])})
+                    edge_type_map[(i, j)] = th.tensor([0., 0., 0., 1., 0., 0., 0., 0.])
+                    edge_counts[3] += 1
+                  
+                    edge_balance_map['ability'] += 1
+                    added = True
+                    attack_count += 1
+                elif hasattr(order, 'target_unit_tag') and (order.target_unit_tag in unit_map.keys()) and ((i, j) not in edge_type_map.keys()):
+                  # Single target ability attacking
+                  graph.add_edges([i], [unit_map[order.target_unit_tag]], {"z": th.tensor([[0., 0., 1., 0., 0., 0., 0., 0.]])})
+                  edge_type_map[(i, unit_map[order.target_unit_tag])] = th.tensor([0., 0., 1., 0., 0., 0., 0., 0.])
+                  empty_graph.add_edges([i], [unit_map[order.target_unit_tag]], {"z": th.tensor([[0., 0., 1., 0., 0., 0., 0., 0.]])})
+                  keep_map[(i, unit_map[order.target_unit_tag])] = 1
+                  edge_counts[2] += 1
+              elif order.ability_id in ut.attack_commands:
+                if hasattr(order, 'target_unit_tag') and (order.target_unit_tag in unit_map.keys()) and ((i, j) not in edge_type_map.keys()):
+                  # Normal attacking
+                  graph.add_edges([i], [unit_map[order.target_unit_tag]], {"z": th.tensor([[0., 1., 0., 0., 0., 0., 0., 0.]])})
+                  edge_type_map[(i, unit_map[order.target_unit_tag])] = th.tensor([0., 1., 0., 0., 0., 0., 0., 0.])
+                  edge_counts[1] += 1
+                  
+                  if attack_count <= 0:
+                    empty_graph.add_edges([i], [unit_map[order.target_unit_tag]], {"z": th.tensor([[0., 1., 0., 0., 0., 0., 0., 0.]])})
+                    keep_map[(i, unit_map[order.target_unit_tag])] = 1
+                  else:
+                    edge_balance_map['attack'] += 1
+                    attack_count -= 1
+                    added = True
+                  
+            # Add enemy "Targetable" edges
+            attacker_types = ut.unit_data[graph.ndata["unit_type"][i].item()]["attack_type"]
+            targeteable = False
           
-          # Add "Visible" edges
-          # Visible = 1, Snapshot = 2, Hidden = 3
-          # Cloaked = 1, CloakedDetected = 2, NotCloaked = 3
-          if (target_range <= ut.unit_data[graph.ndata["unit_type"][i].item()]["sight"]) and (graph.ndata["unit_display"][j] == 1) and (graph.ndata["unit_cloaked"][j] != 1):
-            graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 0., 1., 0.]])})
-            edge_type_map[(i, j)] = th.tensor([0., 0., 0., 0., 0., 0., 1., 0.])
-        else:
-          # Add friendly "Targetable" edges
-          if 1 in ut.unit_data[graph.ndata["unit_type"][i].item()]["support_type"]:
-            support_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["support_range"][1]
+            if 1 in attacker_types:
+              ground_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["attack_range"][1]
+              is_ground = len(ut.unit_data[graph.ndata["unit_type"][j].item()]["unit_type"].intersection(set([1, 3, 8]))) > 0
             
-            if (target_range <= support_range):
+              if (target_range <= ground_range) and is_ground:
+                targeteable = True
+              
+            if 2 in attacker_types: 
+              air_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["attack_range"][2]
+              is_air = len(ut.unit_data[graph.ndata["unit_type"][j].item()]["unit_type"].intersection(set([2, 4, 9]))) > 0
+            
+              if (target_range <= air_range) and is_air:
+                targeteable = True
+          
+            if targeteable and ((i, j) not in edge_type_map.keys()):
               graph.add_edges([i], [j], {"z": th.tensor([[1., 0., 0., 0., 0., 0., 0., 0.]])})
               edge_type_map[(i, j)] = th.tensor([1., 0., 0., 0., 0., 0., 0., 0.])
-           
-          # Add "Supporting" edges   
-          # AoE vision supporting
-          if 6 in ut.unit_data[graph.ndata["unit_type"][i].item()]["unit_type"]:
+              empty_graph.add_edges([i], [j], {"z": th.tensor([[1., 0., 0., 0., 0., 0., 0., 0.]])})
+              keep_map[(i, j)] = 1
+              edge_counts[0] += 1
+          
+            # Add "Visible" edges
+            # Visible = 1, Snapshot = 2, Hidden = 3
+            # Cloaked = 1, CloakedDetected = 2, NotCloaked = 3
+            if (target_range <= ut.unit_data[graph.ndata["unit_type"][i].item()]["sight"]) and (graph.ndata["unit_display"][j] == 1) and (graph.ndata["unit_cloaked"][j] != 1) and ((i, j) not in edge_type_map.keys()):
+              graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 0., 1., 0.]])})
+              edge_type_map[(i, j)] = th.tensor([0., 0., 0., 0., 0., 0., 1., 0.])
+              empty_graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 0., 1., 0.]])})
+              keep_map[(i, j)] = 1
+              edge_counts[6] += 1
+          else:
+            # Add "Supporting" edges   
+            for order in units[i].orders:
+              if order.ability_id in ut.support_abilities:
+                if hasattr(order, 'target_pos'):
+                  # AoE ability supporting
+                  target_pos = th.tensor([order.target_pos.x, order.target_pos.y])
+                  aoe_range = get_range(target_pos, th.tensor([graph.ndata["unit_pos"][j][0], graph.ndata["unit_pos"][j][1]]))
+                
+                  if aoe_range <= ut.support_ability_aoe_radius[order.ability_id] and ((i, j) not in edge_type_map.keys()):
+                    graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 1., 0., 0.]])})
+                    edge_type_map[(i, j)] = th.tensor([0., 0., 0., 0., 0., 1., 0., 0.])
+                    empty_graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 1., 0., 0.]])})
+                    keep_map[(i, j)] = 1
+                    edge_counts[5] += 1
+                elif hasattr(order, 'target_world_space_pos'):
+                  # AoE ability supporting
+                  target_pos = th.tensor([order.target_world_space_pos.x, order.target_world_space_pos.y])
+                  aoe_range = get_range(target_pos, th.tensor([graph.ndata["unit_pos"][j][0], graph.ndata["unit_pos"][j][1]]))
+                
+                  if aoe_range <= ut.support_ability_aoe_radius[order.ability_id] and ((i, j) not in edge_type_map.keys()):
+                    graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 1., 0., 0.]])})
+                    edge_type_map[(i, j)] = th.tensor([0., 0., 0., 0., 0., 1., 0., 0.])
+                    empty_graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 1., 0., 0.]])})
+                    keep_map[(i, j)] = 1
+                    edge_counts[5] += 1
+                elif hasattr(order, 'target_unit_tag') and (order.target_unit_tag in unit_map.keys()) and ((i, j) not in edge_type_map.keys()):
+                  # Single target ability supporting
+                  graph.add_edges([i], [unit_map[order.target_unit_tag]], {"z": th.tensor([[0., 0., 0., 0., 1., 0., 0., 0.]])})
+                  edge_type_map[(i, unit_map[order.target_unit_tag])] = th.tensor([0., 0., 0., 0., 1., 0., 0., 0.])
+                  edge_counts[4] += 1
+                
+                  edge_balance_map['support'] += 1
+                  added = True
+                  attack_count += 1
+                 
+            # Add friendly "Targetable" edges
+            if 1 in ut.unit_data[graph.ndata["unit_type"][i].item()]["support_type"]:
+              support_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["support_range"][1]
+            
+              if (target_range <= support_range) and ((i, j) not in edge_type_map.keys()):
+                graph.add_edges([i], [j], {"z": th.tensor([[1., 0., 0., 0., 0., 0., 0., 0.]])})
+                edge_type_map[(i, j)] = th.tensor([1., 0., 0., 0., 0., 0., 0., 0.])
+                empty_graph.add_edges([i], [j], {"z": th.tensor([[1., 0., 0., 0., 0., 0., 0., 0.]])})
+                keep_map[(i, j)] = 1
+                edge_counts[0] += 1
+              
+            # AoE vision supporting
+            if 6 in ut.unit_data[graph.ndata["unit_type"][i].item()]["unit_type"]:
+              vision_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["sight"]
+            
+              if (target_range <= vision_range) and ((i, j) not in edge_type_map.keys()):
+                graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 1., 0., 0.]])})
+                edge_type_map[(i, j)] = th.tensor([0., 0., 0., 0., 0., 1., 0., 0.])
+                empty_graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 1., 0., 0.]])})
+                keep_map[(i, j)] = 1
+                edge_counts[5] += 1
+      
+            # Add "Communication" edges  
             vision_range = ut.unit_data[graph.ndata["unit_type"][i].item()]["sight"]
             
-            if (target_range <= vision_range):
-              graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 1., 0., 0.]])})
-              edge_type_map[(i, j)] = th.tensor([0., 0., 0., 0., 0., 1., 0., 0.])
-          
-          for order in units[i].orders:
-            if order.ability_id in ut.support_abilities:
-              if hasattr(order, 'target_unit_tag') and (order.target_unit_tag in unit_map.keys()):
-                # Single target ability supporting
-                graph.add_edges([i], [unit_map[order.target_unit_tag]], {"z": th.tensor([[0., 0., 0., 0., 1., 0., 0., 0.]])})
-                edge_type_map[(i, unit_map[order.target_unit_tag])] = th.tensor([0., 0., 0., 0., 1., 0., 0., 0.])
-              if hasattr(order, 'target_pos') and (order.target_unit_tag in unit_map.keys()):
-                # AoE ability supporting
-                target_pos = th.tensor([order.target_pos.x, order.target_pos.y, 0.0])
-                target_range = get_range(target_pos, graph.ndata["unit_pos"][j])
-                
-                if target_range <= ut.support_ability_aoe_radius[order.ability_id]:
-                  graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 1., 0., 0.]])})
-                  edge_type_map[(i, j)] = th.tensor([0., 0., 0., 0., 0., 1., 0., 0.])
-      
-    # Add "Transporting" edges  
-    if hasattr(units[i], "passengers"):
-      for passenger in units[i].passengers:
-        graph.add_edges([i], [unit_map[passenger.tag]], {"z": th.tensor([[0., 0., 0., 0., 0., 0., 0., 1.]])})
-        edge_type_map[(i, unit_map[passenger.tag])] = th.tensor([0., 0., 0., 0., 0., 0., 0., 1.])
+            if (target_range <= vision_range) and ((i, j) not in edge_type_map.keys()):
+              graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 0., 0., 1.]])})
+              edge_type_map[(i, j)] = th.tensor([0., 0., 0., 0., 0., 0., 0., 1.])
+              empty_graph.add_edges([i], [j], {"z": th.tensor([[0., 0., 0., 0., 0., 0., 0., 1.]])})
+              keep_map[(i, j)] = 1
+              edge_counts[7] += 1
+  
+  return added
 
-def create_graph(units, deltas):
+def create_graph(units, deltas, edge_balance_map):
   unit_to_node = {}
   visible_units = []
   
@@ -294,30 +380,24 @@ def create_graph(units, deltas):
 
   true_graph = dgl.graph(([], []), num_nodes=len(visible_units))
   edge_type_map = {}
+  keep_map = {}
+  edge_counts = {}
+  edge_counts[0] = 0
+  edge_counts[1] = 0
+  edge_counts[2] = 0
+  edge_counts[3] = 0
+  edge_counts[4] = 0
+  edge_counts[5] = 0
+  edge_counts[6] = 0
+  edge_counts[7] = 0
   
   add_unit_meta_data(true_graph, visible_units, deltas)
-  add_edges(true_graph, visible_units, unit_to_node, edge_type_map)
-  
-  true_graph.ndata.pop("unit_tag")
-  true_graph.ndata.pop("unit_type")
-  true_graph.ndata.pop("unit_alliance")
-  true_graph.ndata.pop("unit_facing")
-  true_graph.ndata.pop("unit_radius")
-  true_graph.ndata.pop("unit_display")
-  true_graph.ndata.pop("unit_cloaked")
-  true_graph.ndata.pop("unit_pos")
-  true_graph.ndata.pop("unit_health")
-  true_graph.ndata.pop("unit_shield")
-  true_graph.ndata.pop("unit_energy")
-  true_graph.ndata.pop("unit_health_delta")
-  true_graph.ndata.pop("unit_shield_delta")
-  true_graph.ndata.pop("unit_energy_delta")
-  true_graph.ndata.pop("unit_flying")
-  true_graph.ndata.pop("unit_burrowed")
   
   # Create empty graph
   empty_graph = dgl.graph(([], []), num_nodes=true_graph.number_of_nodes())
   empty_graph.ndata['feat'] = true_graph.ndata['feat']
+  
+  added = add_edges(true_graph, empty_graph, visible_units, unit_to_node, edge_type_map, edge_counts, keep_map, edge_balance_map)
 
   # Create fully connected graph
   full_edges_u = []
@@ -326,7 +406,7 @@ def create_graph(units, deltas):
 
   for i in range(true_graph.number_of_nodes()):
     for j in range(true_graph.number_of_nodes()):
-      if i != j:
+      if (i != j) and ((i, j) not in keep_map.keys()):# and (get_range(true_graph.ndata["unit_pos"][i], true_graph.ndata["unit_pos"][j]) <= MAX_RADIUS):
         full_edges_u.append(i)
         full_edges_v.append(j)
 
@@ -344,6 +424,23 @@ def create_graph(units, deltas):
   full_graph = dgl.graph((full_u, full_v), num_nodes=true_graph.number_of_nodes())
   full_graph.ndata['feat'] = true_graph.ndata['feat']
   full_graph.edata['labels'] = label_tensor
+  
+  true_graph.ndata.pop("unit_tag")
+  true_graph.ndata.pop("unit_type")
+  true_graph.ndata.pop("unit_alliance")
+  true_graph.ndata.pop("unit_facing")
+  true_graph.ndata.pop("unit_radius")
+  true_graph.ndata.pop("unit_display")
+  true_graph.ndata.pop("unit_cloaked")
+  true_graph.ndata.pop("unit_pos")
+  true_graph.ndata.pop("unit_health")
+  true_graph.ndata.pop("unit_shield")
+  true_graph.ndata.pop("unit_energy")
+  true_graph.ndata.pop("unit_health_delta")
+  true_graph.ndata.pop("unit_shield_delta")
+  true_graph.ndata.pop("unit_energy_delta")
+  true_graph.ndata.pop("unit_flying")
+  true_graph.ndata.pop("unit_burrowed")
 
   graph_dictionary = {}
   graph_dictionary["expected"] = true_graph
@@ -351,5 +448,5 @@ def create_graph(units, deltas):
   graph_dictionary["full"] = full_graph
   graph_dictionary["edge_labels"] = th.stack(edge_label_tensor)
   
-  return graph_dictionary
+  return graph_dictionary, edge_counts, added
 

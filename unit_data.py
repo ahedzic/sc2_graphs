@@ -54,6 +54,32 @@ attack_abilities = set([
 401
 ])
 
+attack_ability_aoe_radius = {
+36: 6,
+2550: 8,
+1764: 6,
+2324: 6,
+1819: 4,
+2338: 0.5,
+42: 2.2,
+140: 10,
+74: 2.25,
+2063: 2,
+173: 4,
+2063: 11,
+1628: 1.75,
+169: 6,
+2588: 2,
+2350: 7,
+249: 8,
+1622: 8,
+2542: 3,
+144: 8,
+1036: 1.5,
+2346: 1.375,
+401: 10
+}
+
 support_abilities = set([
 2067,
 3753,
@@ -75,24 +101,16 @@ support_abilities = set([
 2073
 ])
 
-attack_ability_aoe_radius = {
-2338: 0.5,
-42: 2.2,
-74: 2.25,
-2063: 2,
-1628: 1.75,
-2588: 2,
-1622: 8,
-2542: 3,
-144: 8,
-1036: 1.5,
-2346: 1.375
-}
-
 support_ability_aoe_radius = {
 76: 4,
 2146: 6,
-399: 13
+399: 13,
+386: 4,
+3765: 6,
+1526: 9,
+316: 0.1,
+78: 0.1,
+1764: 6
 }
 
 unit_data = {
@@ -107,8 +125,8 @@ unit_data = {
   sc2_units.Protoss.CyberneticsCore: {"index": 7, "unit_type": set([8]), "attack_type": set(), "attack_range": {}, "support_type": set(), "support_range": {}, "sight": 9},
   sc2_units.Protoss.DarkShrine: {"index": 8, "unit_type": set([8]), "attack_type": set(), "attack_range": {}, "support_type": set(), "support_range": {}, "sight": 9},
   sc2_units.Protoss.DarkTemplar: {"index": 9, "unit_type": set([1, 5]), "attack_type": set([1]), "attack_range": {1: 0.1}, "support_type": set(), "support_range": {}, "sight": 8},
-  sc2_units.Protoss.Disruptor: {"index": 10, "unit_type": set([1]), "attack_type": set([1]), "attack_range": {}, "support_type": set(), "support_range": {}, "sight": 9},
-  sc2_units.Protoss.DisruptorPhased: {"index": 11, "unit_type": set([1]), "attack_type": set([1]), "attack_range": {}, "support_type": set(), "support_range": {}, "sight": 9},
+  sc2_units.Protoss.Disruptor: {"index": 10, "unit_type": set([1]), "attack_type": set([1]), "attack_range": {1: 0}, "support_type": set(), "support_range": {}, "sight": 9},
+  sc2_units.Protoss.DisruptorPhased: {"index": 11, "unit_type": set([1]), "attack_type": set([1]), "attack_range": {1: 0}, "support_type": set(), "support_range": {}, "sight": 9},
   sc2_units.Protoss.FleetBeacon: {"index": 12, "unit_type": set([8]), "attack_type": set(), "attack_range": {}, "support_type": set(), "support_range": {}, "sight": 9},
   sc2_units.Protoss.ForceField: {"index": 13, "unit_type": set([3]), "attack_type": set(), "attack_range": {}, "support_type": set([2]), "support_range": {2: 9}, "sight": 9},
   sc2_units.Protoss.Forge: {"index": 14, "unit_type": set([8]), "attack_type": set(), "attack_range": {}, "support_type": set(), "support_range": {}, "sight": 9},
