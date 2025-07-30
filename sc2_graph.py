@@ -10,7 +10,7 @@ MAX_X = 256
 MAX_Y = 256
 MAX_Z = 20
 FEAT_SPACE_SIZE = 203
-ability_dir ='/home/ahedzic/Downloads/abilities'
+ability_dir ='/home/Downloads/abilities'
 
 def get_deltas(units, prev_units):
   deltas = {"total_health": 0, "total_shield": 0, "total_energy": 0}
