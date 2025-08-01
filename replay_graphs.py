@@ -78,11 +78,11 @@ edge_balance_map['ability'] = 0
 FLAGS = flags.FLAGS
 flags.DEFINE_integer("parallel", 8, "How many instances to run in parallel.")
 flags.DEFINE_integer("step_mul", 32, "How many game steps per observation.")
-flags.DEFINE_string("replays", "/home/ahedzic/Downloads/attack_graphs/", "Path to a directory of replays.")
-#flags.DEFINE_string("replays", "/home/ahedzic/StarCraftII/Replays", "Path to a directory of replays.")
+flags.DEFINE_string("replays", "/home/Downloads/attack_graphs/", "Path to a directory of replays.")
+#flags.DEFINE_string("replays", "/home/StarCraftII/Replays", "Path to a directory of replays.")
 flags.mark_flag_as_required("replays")
-graph_dir ='/home/ahedzic/Downloads/graphs'
-graph_images_dir ='/home/ahedzic/Downloads/graph_images'
+graph_dir ='/home/Downloads/graphs'
+graph_images_dir ='/home/Downloads/graph_images'
 
 
 size = point.Point(16, 16)
